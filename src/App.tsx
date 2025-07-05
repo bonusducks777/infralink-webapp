@@ -10,6 +10,7 @@ import { mainnet, polygon, optimism, arbitrum, base } from 'wagmi/chains';
 import { ThemeProvider } from '@/hooks/useTheme';
 import Index from "./pages/Index";
 import DeviceOwner from "./pages/DeviceOwner";
+import UserProfilePage from "./pages/UserProfilePage";
 import NotFound from "./pages/NotFound";
 import '@rainbow-me/rainbowkit/styles.css';
 
@@ -34,6 +35,7 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/device-owner" element={<DeviceOwner />} />
+                <Route path="/profile" element={<UserProfilePage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>

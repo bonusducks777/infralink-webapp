@@ -42,7 +42,7 @@ export const DeviceScanner = ({ isOpen, onClose, onDeviceFound }: DeviceScannerP
     return isValid;
   };
 
-  const handleManualSubmit = () => {
+  const handleManualSubmit = async () => {
     setError('');
     
     if (!manualAddress.trim()) {
@@ -55,7 +55,46 @@ export const DeviceScanner = ({ isOpen, onClose, onDeviceFound }: DeviceScannerP
       return;
     }
 
-    onDeviceFound(manualAddress);
+    // Try to validate the contract by checking if it's a smart contract
+    try {
+      // Check if we have ethereum provider
+      if (!(window as any).ethereum) {
+        setError('MetaMask or another Web3 wallet is required to connect to devices.');
+        return;
+      }
+      
+      // Try to get network info
+      const provider = (window as any).ethereum;
+      const chainId = await provider.request({ method: 'eth_chainId' });
+      
+      // Try to get code at the address to verify it's a contract
+      const code = await provider.request({
+        method: 'eth_getCode',
+        params: [manualAddress, 'latest']
+      });
+      
+      if (code === '0x') {
+        setError('The provided address does not appear to be a smart contract. Please verify the address and ensure you are on the correct network.');
+        return;
+      }
+      
+      onDeviceFound(manualAddress);
+    } catch (err: any) {
+      console.error('Contract validation error:', err);
+      
+      // Handle different types of errors
+      if (err.code === 4001) {
+        setError('Please connect your wallet to continue.');
+      } else if (err.code === -32002) {
+        setError('Please check your wallet - there may be a pending connection request.');
+      } else if (err.message?.includes('network') || err.message?.includes('chain')) {
+        setError('Unable to connect to the device contract. Please check if you are connected to the correct blockchain network (the same network where the device contract is deployed).');
+      } else if (err.message?.includes('not found') || err.message?.includes('does not exist')) {
+        setError('Contract not found at this address. Please verify the address and ensure you are on the correct network.');
+      } else {
+        setError('Unable to connect to device. Please verify the contract address is correct and you are on the right network.');
+      }
+    }
   };
 
   const startCamera = async () => {
