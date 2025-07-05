@@ -1,13 +1,14 @@
 
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
+import { Link } from 'react-router-dom';
 import { DeviceScanner } from '@/components/DeviceScanner';
 import { DeviceDashboard } from '@/components/DeviceDashboard';
 import { WalletConnection } from '@/components/WalletConnection';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Zap, Wifi, Shield, Clock } from 'lucide-react';
+import { Zap, Wifi, Shield, Clock, Settings } from 'lucide-react';
 
 const Index = () => {
   const { isConnected } = useAccount();
@@ -29,6 +30,12 @@ const Index = () => {
           </div>
           <div className="flex items-center space-x-4">
             <ThemeToggle />
+            <Link to="/device-owner">
+              <Button variant="outline" size="sm">
+                <Settings className="w-4 h-4 mr-2" />
+                Device Owner
+              </Button>
+            </Link>
             <WalletConnection />
           </div>
         </div>

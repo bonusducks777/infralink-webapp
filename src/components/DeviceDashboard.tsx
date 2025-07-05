@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Clock, Zap, Wallet, Bell, Shield } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ArrowLeft, Clock, Zap, Wallet, Bell, Shield, AlertCircle } from 'lucide-react';
 import { formatEther, parseEther } from 'viem';
 
 interface DeviceDashboardProps {
@@ -16,30 +17,184 @@ interface DeviceDashboardProps {
   onBack: () => void;
 }
 
+// DeviceAccess contract ABI
+const DEVICE_CONTRACT_ABI = [
+  {
+    name: 'getDeviceInfo',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'user', type: 'address' }],
+    outputs: [
+      { name: '_feePerSecond', type: 'uint256' },
+      { name: '_isActive', type: 'bool' },
+      { name: '_lastActivatedBy', type: 'address' },
+      { name: '_sessionEndsAt', type: 'uint256' },
+      { name: '_token', type: 'address' },
+      { name: '_isWhitelisted', type: 'bool' },
+      { name: '_timeRemaining', type: 'uint256' }
+    ]
+  },
+  {
+    name: 'activate',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'secondsToActivate', type: 'uint256' }]
+  },
+  {
+    name: 'deactivate',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: []
+  },
+  {
+    name: 'isActive',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'bool' }]
+  },
+  {
+    name: 'lastActivatedBy',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }]
+  },
+  {
+    name: 'sessionEndsAt',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }]
+  },
+  {
+    name: 'feePerSecond',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }]
+  },
+  {
+    name: 'token',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }]
+  }
+] as const;
+
+// ERC20 ABI for token operations
+const ERC20_ABI = [
+  {
+    name: 'approve',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' }
+    ]
+  },
+  {
+    name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' }
+    ],
+    outputs: [{ name: '', type: 'uint256' }]
+  },
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }]
+  },
+  {
+    name: 'symbol',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }]
+  },
+  {
+    name: 'decimals',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint8' }]
+  }
+] as const;
+
 export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps) => {
   const { address } = useAccount();
-  const [paymentDuration, setPaymentDuration] = useState('60'); // minutes
+  const [paymentDuration, setPaymentDuration] = useState('10'); // minutes
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
+  const [tokenAddress, setTokenAddress] = useState<string>('');
+  const [tokenSymbol, setTokenSymbol] = useState<string>('TOKEN');
+  const [tokenDecimals, setTokenDecimals] = useState<number>(18);
 
-  // Mock contract ABI - in real implementation, this would be the actual DeviceAccess ABI
-  const mockDeviceABI = [
-    {
-      name: 'getDeviceInfo',
-      type: 'function',
-      stateMutability: 'view',
-      inputs: [{ name: 'caller', type: 'address' }],
-      outputs: [
-        { name: 'feePerSecond', type: 'uint256' },
-        { name: 'isActive', type: 'bool' },
-        { name: 'currentUser', type: 'address' },
-        { name: 'sessionEndsAt', type: 'uint256' },
-        { name: 'tokenAddress', type: 'address' },
-        { name: 'isWhitelisted', type: 'bool' },
-        { name: 'timeRemaining', type: 'uint256' }
-      ]
-    }
-  ] as const;
+  // Get device info
+  const { data: deviceInfo, isLoading: deviceInfoLoading, error: deviceInfoError, refetch: refetchDeviceInfo } = useReadContract({
+    address: deviceAddress as `0x${string}`,
+    abi: DEVICE_CONTRACT_ABI,
+    functionName: 'getDeviceInfo',
+    args: [address || '0x0000000000000000000000000000000000000000'],
+    query: { refetchInterval: 5000 } // Refetch every 5 seconds
+  });
+
+  // Get token address
+  const { data: tokenAddr } = useReadContract({
+    address: deviceAddress as `0x${string}`,
+    abi: DEVICE_CONTRACT_ABI,
+    functionName: 'token'
+  });
+
+  // Get token symbol
+  const { data: symbol } = useReadContract({
+    address: tokenAddr as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'symbol',
+    query: { enabled: !!tokenAddr }
+  });
+
+  // Get token decimals
+  const { data: decimals } = useReadContract({
+    address: tokenAddr as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'decimals',
+    query: { enabled: !!tokenAddr }
+  });
+
+  // Get user's token balance
+  const { data: tokenBalance } = useReadContract({
+    address: tokenAddr as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: [address || '0x0000000000000000000000000000000000000000'],
+    query: { enabled: !!tokenAddr && !!address }
+  });
+
+  // Get current allowance
+  const { data: allowance } = useReadContract({
+    address: tokenAddr as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'allowance',
+    args: [address || '0x0000000000000000000000000000000000000000', deviceAddress as `0x${string}`],
+    query: { enabled: !!tokenAddr && !!address }
+  });
+
+  // Contract write functions
+  const { writeContract: approveToken, data: approveHash } = useWriteContract();
+  const { writeContract: activateDevice, data: activateHash } = useWriteContract();
+  const { writeContract: deactivateDevice, data: deactivateHash } = useWriteContract();
+
+  // Wait for transaction receipts
+  const { isLoading: isApproving } = useWaitForTransactionReceipt({ hash: approveHash });
+  const { isLoading: isActivating } = useWaitForTransactionReceipt({ hash: activateHash });
+  const { isLoading: isDeactivating } = useWaitForTransactionReceipt({ hash: deactivateHash });
 
   // Update current time every second
   useEffect(() => {
@@ -49,25 +204,35 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     return () => clearInterval(interval);
   }, []);
 
-  // Mock data for demonstration
-  const mockDeviceInfo = {
-    feePerSecond: parseEther('0.001'), // 0.001 ETH per second
-    isActive: true,
-    currentUser: '0x742d35Cc6539C2a0E9BE85A2C1E6C5e4a0f70A20',
-    sessionEndsAt: BigInt(currentTime + 1800), // 30 minutes from now
-    tokenAddress: '0xA0b86a33E6E5FC1b63c4B6e3b3a5B6C9F1d2E3f4',
-    isWhitelisted: false,
-    timeRemaining: BigInt(1800) // 30 minutes
-  };
+  // Update token info when data changes
+  useEffect(() => {
+    if (tokenAddr) setTokenAddress(tokenAddr);
+    if (symbol) setTokenSymbol(symbol);
+    if (decimals) setTokenDecimals(decimals);
+  }, [tokenAddr, symbol, decimals]);
 
-  const isActiveSession = mockDeviceInfo.isActive && Number(mockDeviceInfo.sessionEndsAt) > currentTime;
-  const isMySession = mockDeviceInfo.currentUser?.toLowerCase() === address?.toLowerCase();
-  const timeLeft = Math.max(0, Number(mockDeviceInfo.sessionEndsAt) - currentTime);
-  const sessionProgress = isActiveSession ? ((1800 - timeLeft) / 1800) * 100 : 0;
+  // Parse device info
+  const feePerSecond = deviceInfo?.[0] || 0n;
+  const isActive = deviceInfo?.[1] || false;
+  const currentUser = deviceInfo?.[2] || '0x0000000000000000000000000000000000000000';
+  const sessionEndsAt = Number(deviceInfo?.[3] || 0);
+  const isWhitelisted = deviceInfo?.[5] || false;
+  const timeRemaining = Number(deviceInfo?.[6] || 0);
+
+  const isActiveSession = isActive && sessionEndsAt > currentTime;
+  const isMySession = currentUser.toLowerCase() === address?.toLowerCase();
+  const timeLeft = Math.max(0, sessionEndsAt - currentTime);
 
   const calculatePayment = () => {
     const durationSeconds = parseInt(paymentDuration) * 60;
-    return Number(formatEther(mockDeviceInfo.feePerSecond * BigInt(durationSeconds)));
+    const totalCost = feePerSecond * BigInt(durationSeconds);
+    return totalCost;
+  };
+
+  const formatTokenAmount = (amount: bigint) => {
+    const divisor = 10n ** BigInt(tokenDecimals);
+    const formatted = Number(amount) / Number(divisor);
+    return formatted.toFixed(6);
   };
 
   const formatTime = (seconds: number) => {
@@ -80,6 +245,92 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     }
     return `${minutes}m ${secs}s`;
   };
+
+  const handleApprove = async () => {
+    if (!tokenAddr || !address) return;
+    
+    const amount = calculatePayment();
+    try {
+      await approveToken({
+        address: tokenAddr as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [deviceAddress as `0x${string}`, amount]
+      });
+    } catch (error) {
+      console.error('Approval failed:', error);
+    }
+  };
+
+  const handleActivate = async () => {
+    if (!address) return;
+    
+    const durationSeconds = parseInt(paymentDuration) * 60;
+    try {
+      await activateDevice({
+        address: deviceAddress as `0x${string}`,
+        abi: DEVICE_CONTRACT_ABI,
+        functionName: 'activate',
+        args: [BigInt(durationSeconds)]
+      });
+    } catch (error) {
+      console.error('Activation failed:', error);
+    }
+  };
+
+  const handleDeactivate = async () => {
+    if (!address) return;
+    
+    try {
+      await deactivateDevice({
+        address: deviceAddress as `0x${string}`,
+        abi: DEVICE_CONTRACT_ABI,
+        functionName: 'deactivate'
+      });
+    } catch (error) {
+      console.error('Deactivation failed:', error);
+    }
+  };
+
+  const needsApproval = () => {
+    const payment = calculatePayment();
+    return !allowance || allowance < payment;
+  };
+
+  const hasEnoughBalance = () => {
+    const payment = calculatePayment();
+    return tokenBalance && tokenBalance >= payment;
+  };
+
+  if (deviceInfoLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading device information...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (deviceInfoError) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center space-x-4">
+          <Button variant="outline" onClick={onBack}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <h2 className="text-2xl font-bold">Device Dashboard</h2>
+        </div>
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Failed to load device information. Please check the contract address and try again.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -120,7 +371,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                     <span>Session Progress</span>
                     <span>{formatTime(timeLeft)} remaining</span>
                   </div>
-                  <Progress value={sessionProgress} className="h-2" />
+                  <Progress value={timeRemaining > 0 ? ((timeRemaining - timeLeft) / timeRemaining) * 100 : 0} className="h-2" />
                 </div>
 
                 <Separator />
@@ -133,7 +384,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                     </Badge>
                   </div>
                   <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-                    {mockDeviceInfo.currentUser}
+                    {currentUser}
                   </p>
                 </div>
               </>
@@ -145,11 +396,11 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
               <div className="flex items-center justify-between">
                 <span>Fee per Second</span>
                 <span className="font-mono">
-                  {formatEther(mockDeviceInfo.feePerSecond)} ETH
+                  {formatTokenAmount(feePerSecond)} {tokenSymbol}
                 </span>
               </div>
               
-              {mockDeviceInfo.isWhitelisted && (
+              {isWhitelisted && (
                 <div className="flex items-center space-x-2">
                   <Shield className="w-4 h-4 text-green-500" />
                   <span className="text-sm text-green-600 dark:text-green-400">
@@ -185,6 +436,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                 onChange={(e) => setPaymentDuration(e.target.value)}
                 min="1"
                 max="1440"
+                disabled={isActivating || isApproving || isDeactivating}
               />
             </div>
 
@@ -195,27 +447,65 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
               </div>
               <div className="flex justify-between">
                 <span>Rate:</span>
-                <span>{formatEther(mockDeviceInfo.feePerSecond)} ETH/sec</span>
+                <span>{formatTokenAmount(feePerSecond)} {tokenSymbol}/sec</span>
               </div>
               <Separator />
               <div className="flex justify-between font-semibold">
                 <span>Total Cost:</span>
-                <span>{calculatePayment().toFixed(6)} ETH</span>
+                <span>{formatTokenAmount(calculatePayment())} {tokenSymbol}</span>
               </div>
             </div>
 
-            <Button 
-              className="w-full bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600"
-              disabled={!paymentDuration || parseInt(paymentDuration) <= 0}
-            >
-              {isActiveSession ? "Extend Session" : "Activate Device"}
-            </Button>
-
-            {isMySession && (
-              <Button variant="outline" className="w-full">
-                End Session Early
-              </Button>
+            {/* Balance check */}
+            {tokenBalance !== undefined && (
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                Your balance: {formatTokenAmount(tokenBalance)} {tokenSymbol}
+              </div>
             )}
+
+            {/* Insufficient balance warning */}
+            {!hasEnoughBalance() && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Insufficient {tokenSymbol} balance. You need {formatTokenAmount(calculatePayment())} {tokenSymbol} but only have {formatTokenAmount(tokenBalance || 0n)} {tokenSymbol}.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Action buttons */}
+            <div className="space-y-2">
+              {needsApproval() && hasEnoughBalance() && (
+                <Button 
+                  onClick={handleApprove}
+                  className="w-full"
+                  disabled={isApproving || !paymentDuration || parseInt(paymentDuration) <= 0}
+                >
+                  {isApproving ? "Approving..." : `Approve ${tokenSymbol}`}
+                </Button>
+              )}
+              
+              {!needsApproval() && hasEnoughBalance() && (
+                <Button 
+                  onClick={handleActivate}
+                  className="w-full bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600"
+                  disabled={isActivating || !paymentDuration || parseInt(paymentDuration) <= 0}
+                >
+                  {isActivating ? "Activating..." : (isActiveSession ? "Extend Session" : "Activate Device")}
+                </Button>
+              )}
+
+              {isMySession && (
+                <Button 
+                  onClick={handleDeactivate}
+                  variant="outline" 
+                  className="w-full"
+                  disabled={isDeactivating}
+                >
+                  {isDeactivating ? "Deactivating..." : "End Session Early"}
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -228,7 +518,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
             <span>Notifications</span>
           </CardTitle>
           <CardDescription>
-            Get notified when the device becomes available
+            Get notified when the device becomes available (placeholder functionality)
           </CardDescription>
         </CardHeader>
         <CardContent>

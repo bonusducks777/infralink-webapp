@@ -1,11 +1,12 @@
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Camera, FileText } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Camera, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface DeviceScannerProps {
   isOpen: boolean;
@@ -16,42 +17,145 @@ interface DeviceScannerProps {
 export const DeviceScanner = ({ isOpen, onClose, onDeviceFound }: DeviceScannerProps) => {
   const [manualAddress, setManualAddress] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [isValidAddress, setIsValidAddress] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // QR code detection using basic pattern matching
+  const detectQRCode = (imageData: ImageData) => {
+    // This is a simplified QR code detection
+    // In a real implementation, you'd use a proper QR code library
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    
+    // Look for QR code patterns (simplified)
+    // This is just a placeholder - real QR detection would be more complex
+    return null;
+  };
+
+  const validateEthereumAddress = (address: string) => {
+    const isValid = /^0x[a-fA-F0-9]{40}$/.test(address);
+    setIsValidAddress(isValid);
+    return isValid;
+  };
 
   const handleManualSubmit = () => {
-    if (manualAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
-      onDeviceFound(manualAddress);
-    } else {
-      alert('Please enter a valid Ethereum address');
+    setError('');
+    
+    if (!manualAddress.trim()) {
+      setError('Please enter a contract address');
+      return;
     }
+
+    if (!validateEthereumAddress(manualAddress)) {
+      setError('Please enter a valid Ethereum address (0x followed by 40 hex characters)');
+      return;
+    }
+
+    onDeviceFound(manualAddress);
   };
 
   const startCamera = async () => {
+    setError('');
     setIsScanning(true);
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'environment' // Use back camera on mobile
+        } 
+      });
+      
+      streamRef.current = stream;
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.addEventListener('loadedmetadata', () => {
+          videoRef.current?.play();
+          startQRDetection();
+        });
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
-      alert('Unable to access camera. Please use manual entry.');
+      setError('Unable to access camera. Please ensure you have granted camera permissions or use manual entry.');
       setIsScanning(false);
     }
   };
 
+  const startQRDetection = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+
+    if (!context) return;
+
+    // Set canvas size to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const scan = () => {
+      if (!isScanning) return;
+
+      // Draw current video frame to canvas
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Get image data for QR detection
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Attempt to detect QR code
+      const qrResult = detectQRCode(imageData);
+      
+      if (qrResult && validateEthereumAddress(qrResult)) {
+        onDeviceFound(qrResult);
+        stopCamera();
+        return;
+      }
+
+      // Continue scanning
+      requestAnimationFrame(scan);
+    };
+
+    // Start scanning
+    scan();
+  };
+
   const stopCamera = () => {
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
     setIsScanning(false);
   };
 
   const handleClose = () => {
     stopCamera();
+    setError('');
+    setManualAddress('');
+    setIsValidAddress(false);
     onClose();
   };
+
+  useEffect(() => {
+    if (manualAddress) {
+      validateEthereumAddress(manualAddress);
+    } else {
+      setIsValidAddress(false);
+    }
+  }, [manualAddress]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -74,19 +178,41 @@ export const DeviceScanner = ({ isOpen, onClose, onDeviceFound }: DeviceScannerP
 
           <TabsContent value="manual" className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="address">Device Address</Label>
-              <Input
-                id="address"
-                placeholder="0x..."
-                value={manualAddress}
-                onChange={(e) => setManualAddress(e.target.value)}
-                className="font-mono"
-              />
+              <Label htmlFor="address">Device Contract Address</Label>
+              <div className="relative">
+                <Input
+                  id="address"
+                  placeholder="0x..."
+                  value={manualAddress}
+                  onChange={(e) => setManualAddress(e.target.value)}
+                  className={`font-mono pr-10 ${isValidAddress ? 'border-green-500' : ''}`}
+                />
+                {manualAddress && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    {isValidAddress ? (
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                    )}
+                  </div>
+                )}
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Enter the Ethereum contract address of the device you want to connect to
+              </p>
             </div>
+
+            {error && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
             <Button 
               onClick={handleManualSubmit} 
               className="w-full"
-              disabled={!manualAddress}
+              disabled={!manualAddress || !isValidAddress}
             >
               Connect to Device
             </Button>
@@ -99,18 +225,33 @@ export const DeviceScanner = ({ isOpen, onClose, onDeviceFound }: DeviceScannerP
                   <div className="w-full h-48 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
                     <Camera className="w-16 h-16 text-gray-400" />
                   </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Scan a QR code containing the device contract address
+                  </p>
                   <Button onClick={startCamera} className="w-full">
                     Start Camera
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-48 bg-black rounded-lg"
-                  />
+                  <div className="relative">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      className="w-full h-48 bg-black rounded-lg"
+                    />
+                    <canvas
+                      ref={canvasRef}
+                      className="hidden"
+                    />
+                    <div className="absolute inset-0 border-2 border-blue-500 rounded-lg pointer-events-none">
+                      <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-blue-500"></div>
+                      <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-blue-500"></div>
+                      <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-blue-500"></div>
+                      <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-blue-500"></div>
+                    </div>
+                  </div>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     Point camera at device QR code
                   </p>
@@ -120,6 +261,13 @@ export const DeviceScanner = ({ isOpen, onClose, onDeviceFound }: DeviceScannerP
                 </div>
               )}
             </div>
+
+            {error && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>
