@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useChainId } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useChainId, useAccount } from 'wagmi';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -135,6 +135,7 @@ const ERC20_ABI = [
 export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps) => {
   const { address, isConnected, isAuthenticated } = useWallet();
   const chainId = useChainId();
+  const { chain } = useAccount();
   const [paymentDuration, setPaymentDuration] = useState('10'); // minutes
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
@@ -193,7 +194,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   });
 
   // Parse device info from the updated contract
-  const feePerSecond = deviceInfo?.[0] || 0n;
+  const feePerSecond = deviceInfo?.[0] ? BigInt(deviceInfo[0].toString()) : 0n;
   const isActive = deviceInfo?.[1] || false;
   const currentUser = deviceInfo?.[2] || '0x0000000000000000000000000000000000000000';
   const sessionEndsAt = Number(deviceInfo?.[3] || 0);
@@ -214,14 +215,14 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     ? (chainId === 296 ? 'HBAR' : 'ETH') // 296 = Hedera testnet
     : rawTokenSymbol;
   const lastUserWasWhitelisted = deviceDetails?.[3] || false;
-  const whitelistFeePerSecond = deviceDetails?.[4] || 0n;
+  const whitelistFeePerSecond = deviceDetails?.[4] ? BigInt(deviceDetails[4].toString()) : 0n;
 
   // Parse user whitelist info from Info contract
   const whitelistName = userWhitelistInfo?.[0] || '';
   const userIsWhitelisted = userWhitelistInfo?.[1] || false;
-  const whitelistFeeFromInfo = userWhitelistInfo?.[2] || 0n;
+  const whitelistFeeFromInfo = userWhitelistInfo?.[2] ? BigInt(userWhitelistInfo[2].toString()) : 0n;
   const isFreeFromInfo = userWhitelistInfo?.[3] || false;
-  const addedAt = userWhitelistInfo?.[4] || 0n;
+  const addedAt = userWhitelistInfo?.[4] ? BigInt(userWhitelistInfo[4].toString()) : 0n;
   const addedBy = userWhitelistInfo?.[5] || '';
 
   // Calculate applicable fee: use whitelist fee if whitelisted and not free, otherwise regular fee
@@ -255,7 +256,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   });
 
   // Get the appropriate balance
-  const currentBalance = useNativeToken ? ethBalanceData?.value : tokenBalance;
+  const currentBalance = useNativeToken ? ethBalanceData?.value : (tokenBalance ? BigInt(tokenBalance.toString()) : 0n);
 
   // Contract write functions
   const { writeContract: approveToken, data: approveHash } = useWriteContract();
@@ -363,7 +364,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleApprove = async () => {
-    if (!tokenAddress || !address) return;
+    if (!tokenAddress || !address || !chain) return;
     
     const amount = calculatePayment();
     try {
@@ -371,7 +372,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         address: tokenAddress as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [deviceAddress as `0x${string}`, amount]
+        args: [deviceAddress as `0x${string}`, amount],
+        chain,
+        account: address
       });
     } catch (error) {
       console.error('Approval failed:', error);
@@ -379,7 +382,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleActivate = async () => {
-    if (!address) return;
+    if (!address || !chain) return;
     
     setTxError('');
     setTxSuccess('');
@@ -407,7 +410,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
           abi: DEVICE_CONTRACT_ABI,
           functionName: 'activate',
           args: [BigInt(durationSeconds)],
-          value: paymentValue // Send native token value
+          value: paymentValue, // Send native token value
+          chain,
+          account: address
         });
       } else {
         // For ERC20 tokens, no value needed (approval already done)
@@ -415,7 +420,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
           address: deviceAddress as `0x${string}`,
           abi: DEVICE_CONTRACT_ABI,
           functionName: 'activate',
-          args: [BigInt(durationSeconds)]
+          args: [BigInt(durationSeconds)],
+          chain,
+          account: address
         });
       }
       
@@ -447,7 +454,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleDeactivate = async () => {
-    if (!address) return;
+    if (!address || !chain) return;
     
     setTxError('');
     setTxSuccess('');
@@ -457,7 +464,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
       await deactivateDevice({
         address: deviceAddress as `0x${string}`,
         abi: DEVICE_CONTRACT_ABI,
-        functionName: 'deactivate'
+        functionName: 'deactivate',
+        chain,
+        account: address
       });
       
       // Don't show success message immediately - wait for transaction confirmation
@@ -485,7 +494,8 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     
     const payment = calculatePayment();
     if (payment === 0n) return false; // No approval needed for free access
-    return !allowance || allowance < payment;
+    const currentAllowance = allowance ? BigInt(allowance.toString()) : 0n;
+    return currentAllowance < payment;
   };
 
   const hasEnoughBalance = () => {
@@ -495,7 +505,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     if (useNativeToken) {
       return ethBalanceData?.value && ethBalanceData.value >= payment;
     } else {
-      return tokenBalance && tokenBalance >= payment;
+      return currentBalance >= payment;
     }
   };
 
@@ -584,7 +594,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="device">Device Control</TabsTrigger>
           <TabsTrigger value="info">Device Info</TabsTrigger>
-          <TabsTrigger value="whitelist">Users ({allRegisteredUsers?.length || 0})</TabsTrigger>
+          <TabsTrigger value="whitelist">Users ({(allRegisteredUsers as string[])?.length || 0})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="device" className="space-y-6">
@@ -705,9 +715,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                 </div>
 
                 {/* Balance check */}
-                {tokenBalance !== undefined && applicableFee > 0n && (
+                {currentBalance !== undefined && applicableFee > 0n && (
                   <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Your balance: {formatTokenAmount(tokenBalance)} {tokenSymbol}
+                    Your balance: {formatTokenAmount(currentBalance)} {tokenSymbol}
                   </div>
                 )}
 
@@ -716,7 +726,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
-                      Insufficient {tokenSymbol} balance. You need {formatTokenAmount(calculatePayment())} {tokenSymbol} but only have {formatTokenAmount(tokenBalance || 0n)} {tokenSymbol}.
+                      Insufficient {tokenSymbol} balance. You need {formatTokenAmount(calculatePayment())} {tokenSymbol} but only have {formatTokenAmount(currentBalance || 0n)} {tokenSymbol}.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -835,7 +845,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Users className="w-5 h-5" />
-                <span>Registered Users ({allRegisteredUsers?.length || 0})</span>
+                <span>Registered Users ({(allRegisteredUsers as string[])?.length || 0})</span>
               </CardTitle>
               <CardDescription>
                 All users registered in the InfraLink system
@@ -846,13 +856,13 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                 <div className="flex items-center justify-center p-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                 </div>
-              ) : !allRegisteredUsers || allRegisteredUsers.length === 0 ? (
+              ) : !allRegisteredUsers || (allRegisteredUsers as string[]).length === 0 ? (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-8">
                   No registered users yet
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {allRegisteredUsers.map((addr: string, index: number) => (
+                  {(allRegisteredUsers as string[]).map((addr: string, index: number) => (
                     <div key={addr} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-green-500 rounded-full flex items-center justify-center">

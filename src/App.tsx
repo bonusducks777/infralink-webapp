@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -101,9 +100,11 @@ const zircuitMainnet = {
   },
   testnet: false,
 } as const;
+
 import Index from "./pages/Index";
 import DeviceOwner from "./pages/DeviceOwner";
 import UserProfilePage from "./pages/UserProfilePage";
+import ContractDeployer from "./pages/ContractDeployer";
 import NotFound from "./pages/NotFound";
 
 const config = createConfig({
@@ -152,6 +153,7 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/device-owner" element={<DeviceOwner />} />
                 <Route path="/profile" element={<UserProfilePage />} />
+                <Route path="/contract-deployer" element={<ContractDeployer />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
