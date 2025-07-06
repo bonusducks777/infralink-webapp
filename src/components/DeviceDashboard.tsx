@@ -1,6 +1,5 @@
-
 import { useState, useEffect } from 'react';
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useChainId, useAccount } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useChainId } from 'wagmi';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -136,7 +135,6 @@ const ERC20_ABI = [
 export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps) => {
   const { address, isConnected, isAuthenticated } = useWallet();
   const chainId = useChainId();
-  const { chain } = useAccount();
   const [paymentDuration, setPaymentDuration] = useState('10'); // minutes
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
@@ -294,7 +292,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         whitelistName: whitelistName
       });
     }
-  }, [deviceAddress, deviceName, deviceDescription, userIsWhitelisted, whitelistName, address, deviceDetailsLoading]);
+  }, [deviceAddress, deviceName, deviceDescription, userIsWhitelisted, whitelistName, address, deviceDetailsLoading]); // Removed addRecentDevice from deps
 
   // Handle activation transaction results
   useEffect(() => {
@@ -344,7 +342,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     const durationSeconds = parseInt(paymentDuration) * 60;
     // Use the applicable fee returned from the contract (already accounts for whitelist status)
     const totalCost = applicableFee * BigInt(durationSeconds);
-    return totalCost;
+  return totalCost;
   };
 
   const formatTokenAmount = (amount: bigint) => {
@@ -365,7 +363,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleApprove = async () => {
-    if (!tokenAddress || !address || !chain) return;
+    if (!tokenAddress || !address) return;
     
     const amount = calculatePayment();
     try {
@@ -373,9 +371,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         address: tokenAddress as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [deviceAddress as `0x${string}`, amount],
-        chain,
-        account: address
+        args: [deviceAddress as `0x${string}`, amount]
       });
     } catch (error) {
       console.error('Approval failed:', error);
@@ -383,7 +379,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleActivate = async () => {
-    if (!address || !chain) return;
+    if (!address) return;
     
     setTxError('');
     setTxSuccess('');
@@ -411,9 +407,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
           abi: DEVICE_CONTRACT_ABI,
           functionName: 'activate',
           args: [BigInt(durationSeconds)],
-          value: paymentValue, // Send native token value
-          chain,
-          account: address
+          value: paymentValue // Send native token value
         });
       } else {
         // For ERC20 tokens, no value needed (approval already done)
@@ -421,9 +415,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
           address: deviceAddress as `0x${string}`,
           abi: DEVICE_CONTRACT_ABI,
           functionName: 'activate',
-          args: [BigInt(durationSeconds)],
-          chain,
-          account: address
+          args: [BigInt(durationSeconds)]
         });
       }
       
@@ -455,7 +447,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleDeactivate = async () => {
-    if (!address || !chain) return;
+    if (!address) return;
     
     setTxError('');
     setTxSuccess('');
@@ -465,9 +457,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
       await deactivateDevice({
         address: deviceAddress as `0x${string}`,
         abi: DEVICE_CONTRACT_ABI,
-        functionName: 'deactivate',
-        chain,
-        account: address
+        functionName: 'deactivate'
       });
       
       // Don't show success message immediately - wait for transaction confirmation
@@ -495,7 +485,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     
     const payment = calculatePayment();
     if (payment === 0n) return false; // No approval needed for free access
-    return !allowance || (allowance as bigint) < payment;
+    return !allowance || allowance < payment;
   };
 
   const hasEnoughBalance = () => {
@@ -505,7 +495,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     if (useNativeToken) {
       return ethBalanceData?.value && ethBalanceData.value >= payment;
     } else {
-      return tokenBalance && (tokenBalance as bigint) >= payment;
+      return tokenBalance && tokenBalance >= payment;
     }
   };
 
@@ -717,7 +707,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                 {/* Balance check */}
                 {tokenBalance !== undefined && applicableFee > 0n && (
                   <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Your balance: {formatTokenAmount(tokenBalance as bigint)} {tokenSymbol}
+                    Your balance: {formatTokenAmount(tokenBalance)} {tokenSymbol}
                   </div>
                 )}
 
@@ -726,7 +716,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
-                      Insufficient {tokenSymbol} balance. You need {formatTokenAmount(calculatePayment())} {tokenSymbol} but only have {formatTokenAmount((tokenBalance as bigint) || 0n)} {tokenSymbol}.
+                      Insufficient {tokenSymbol} balance. You need {formatTokenAmount(calculatePayment())} {tokenSymbol} but only have {formatTokenAmount(tokenBalance || 0n)} {tokenSymbol}.
                     </AlertDescription>
                   </Alert>
                 )}

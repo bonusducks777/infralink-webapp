@@ -101,11 +101,9 @@ const zircuitMainnet = {
   },
   testnet: false,
 } as const;
-
 import Index from "./pages/Index";
 import DeviceOwner from "./pages/DeviceOwner";
 import UserProfilePage from "./pages/UserProfilePage";
-import ContractDeployer from "./pages/ContractDeployer";
 import NotFound from "./pages/NotFound";
 
 const config = createConfig({
@@ -138,9 +136,8 @@ const App = () => (
         },
         embeddedWallets: {
           createOnLogin: 'users-without-wallets',
-          requireUserPasswordOnCreate: false,
         },
-        loginMethods: ['email', 'sms', 'wallet', 'google', 'apple'],
+        loginMethods: ['email', 'sms', 'wallet'],
         defaultChain: hederaTestnet,
         supportedChains: [hederaTestnet, flowMainnet, flowTestnet, zircuitMainnet, sepolia, mainnet, polygon, optimism, arbitrum, base],
       }}
@@ -154,7 +151,6 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/device-owner" element={<DeviceOwner />} />
-                <Route path="/contract-deployer" element={<ContractDeployer />} />
                 <Route path="/profile" element={<UserProfilePage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
