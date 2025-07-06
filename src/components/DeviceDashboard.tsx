@@ -292,7 +292,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         whitelistName: whitelistName
       });
     }
-  }, [deviceAddress, deviceName, deviceDescription, userIsWhitelisted, whitelistName, address, deviceDetailsLoading]); // Removed addRecentDevice from deps
+  }, [deviceAddress, deviceName, deviceDescription, userIsWhitelisted, whitelistName, address, deviceDetailsLoading]);
 
   // Handle activation transaction results
   useEffect(() => {
@@ -342,7 +342,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     const durationSeconds = parseInt(paymentDuration) * 60;
     // Use the applicable fee returned from the contract (already accounts for whitelist status)
     const totalCost = applicableFee * BigInt(durationSeconds);
-  return totalCost;
+    return totalCost;
   };
 
   const formatTokenAmount = (amount: bigint) => {
@@ -485,7 +485,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     
     const payment = calculatePayment();
     if (payment === 0n) return false; // No approval needed for free access
-    return !allowance || allowance < payment;
+    return !allowance || (allowance as bigint) < payment;
   };
 
   const hasEnoughBalance = () => {
@@ -495,7 +495,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     if (useNativeToken) {
       return ethBalanceData?.value && ethBalanceData.value >= payment;
     } else {
-      return tokenBalance && tokenBalance >= payment;
+      return tokenBalance && (tokenBalance as bigint) >= payment;
     }
   };
 
@@ -707,7 +707,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                 {/* Balance check */}
                 {tokenBalance !== undefined && applicableFee > 0n && (
                   <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Your balance: {formatTokenAmount(tokenBalance)} {tokenSymbol}
+                    Your balance: {formatTokenAmount(tokenBalance as bigint)} {tokenSymbol}
                   </div>
                 )}
 
@@ -716,7 +716,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
-                      Insufficient {tokenSymbol} balance. You need {formatTokenAmount(calculatePayment())} {tokenSymbol} but only have {formatTokenAmount(tokenBalance || 0n)} {tokenSymbol}.
+                      Insufficient {tokenSymbol} balance. You need {formatTokenAmount(calculatePayment())} {tokenSymbol} but only have {formatTokenAmount((tokenBalance as bigint) || 0n)} {tokenSymbol}.
                     </AlertDescription>
                   </Alert>
                 )}
