@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
+import { useWallet } from '@/hooks/useWallet';
 import { ethers } from 'ethers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,26 +15,27 @@ import { Users, Plus, Trash2, Edit3, Shield, AlertCircle, CheckCircle, Search } 
 // InfraLink Info Contract ABI (extended for device management)
 const INFRALINK_INFO_ABI = [
   // Device Management Functions
-  "function registerDevice(address deviceContract, string memory deviceName, string memory deviceDescription) external",
-  "function updateDeviceInfo(address deviceContract, string memory deviceName, string memory deviceDescription) external",
-  "function getDeviceInfo(address deviceContract) external view returns (string memory name, string memory description, address owner, bool isRegistered, uint256 registeredAt)",
-  "function addDeviceWhitelist(address deviceContract, address user, string memory whitelistName, uint256 feePerSecond, bool isFree) external",
-  "function removeDeviceWhitelist(address deviceContract, address user) external",
-  "function updateDeviceWhitelist(address deviceContract, address user, string memory whitelistName, uint256 feePerSecond, bool isFree) external",
-  "function getDeviceWhitelistEntries(address deviceContract) external view returns (tuple(address user, string whitelistName, uint256 feePerSecond, bool isFree, bool isActive, uint256 addedAt, address addedBy)[])",
+  "function registerDevice(address deviceContract, string memory _name, string memory _description) external",
+  "function updateDeviceInfo(address deviceContract, string memory _name, string memory _description) external",
+  "function deviceRegistry(address deviceContract) external view returns (string memory name, string memory description, address owner, bool isRegistered, uint256 registeredAt)",
+  "function addUserToWhitelist(address user, address deviceContract, string memory whitelistName, uint256 feePerSecond, bool isFree) external",
+  "function removeUserFromWhitelist(address user, address deviceContract) external",
+  "function updateWhitelistEntry(address user, address deviceContract, string memory whitelistName, uint256 feePerSecond, bool isFree) external",
+  "function getUserWhitelists(address user) external view returns (tuple(address deviceContract, string deviceName, string whitelistName, uint256 feePerSecond, bool isFree, bool isActive, uint256 addedAt, address addedBy)[])",
   "function getUserProfile(address user) external view returns (string memory name, string memory bio, string memory email, string memory avatar, bool exists, uint256 createdAt, uint256 updatedAt)",
   
   // Admin Functions
-  "function setDeviceAdmin(address deviceContract, address admin, bool isAdmin) external",
-  "function isDeviceAdmin(address deviceContract, address admin) external view returns (bool)",
+  "function addDeviceAdmin(address deviceContract, address admin) external",
+  "function removeDeviceAdmin(address deviceContract, address admin) external",
+  "function deviceAdmins(address deviceContract, address admin) external view returns (bool)",
   
   // Events
   "event DeviceRegistered(address indexed deviceContract, string name, address indexed owner)",
-  "event DeviceWhitelistAdded(address indexed deviceContract, address indexed user, string whitelistName, uint256 feePerSecond, bool isFree)",
-  "event DeviceWhitelistRemoved(address indexed deviceContract, address indexed user)"
+  "event WhitelistAdded(address indexed user, address indexed deviceContract, string whitelistName, uint256 feePerSecond, bool isFree)",
+  "event WhitelistRemoved(address indexed user, address indexed deviceContract, address indexed removedBy)"
 ];
 
-const INFRALINK_INFO_ADDRESS = "0x0000000000000000000000000000000000000000"; // Replace with actual deployed address
+const INFRALINK_INFO_ADDRESS = "0x7aee0cbbcd0e5257931f7dc87f0345c1bb2aab39"; // Replace with actual deployed address
 
 interface DeviceWhitelistEntry {
   user: string;
@@ -68,7 +69,7 @@ interface WhitelistManagerProps {
 }
 
 export const WhitelistManager = ({ deviceContract, isOwner, onWhitelistUpdate }: WhitelistManagerProps) => {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useWallet();
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [whitelistEntries, setWhitelistEntries] = useState<DeviceWhitelistEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -94,17 +95,11 @@ export const WhitelistManager = ({ deviceContract, isOwner, onWhitelistUpdate }:
     setError('');
     
     try {
-      // Check if contract address is configured
-      if (INFRALINK_INFO_ADDRESS === "0x0000000000000000000000000000000000000000") {
-        setError('InfraLink Info contract not configured. Please update INFRALINK_INFO_ADDRESS.');
-        return;
-      }
-
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const contract = new ethers.Contract(INFRALINK_INFO_ADDRESS, INFRALINK_INFO_ABI, provider);
       
       // Get device info
-      const deviceData = await contract.getDeviceInfo(deviceContract);
+      const deviceData = await contract.deviceRegistry(deviceContract);
       const info: DeviceInfo = {
         name: deviceData[0],
         description: deviceData[1],
@@ -115,45 +110,10 @@ export const WhitelistManager = ({ deviceContract, isOwner, onWhitelistUpdate }:
       
       setDeviceInfo(info);
       
-      // Get whitelist entries
-      const whitelistData = await contract.getDeviceWhitelistEntries(deviceContract);
-      const entries: DeviceWhitelistEntry[] = [];
-      
-      // Load user profiles for each whitelisted user
-      for (const entry of whitelistData) {
-        try {
-          const userProfile = await contract.getUserProfile(entry.user);
-          entries.push({
-            user: entry.user,
-            whitelistName: entry.whitelistName,
-            feePerSecond: entry.feePerSecond,
-            isFree: entry.isFree,
-            isActive: entry.isActive,
-            addedAt: Number(entry.addedAt),
-            addedBy: entry.addedBy,
-            userProfile: {
-              name: userProfile[0],
-              bio: userProfile[1],
-              email: userProfile[2],
-              avatar: userProfile[3],
-              exists: userProfile[4]
-            }
-          });
-        } catch (err) {
-          // If user profile doesn't exist, add entry without profile
-          entries.push({
-            user: entry.user,
-            whitelistName: entry.whitelistName,
-            feePerSecond: entry.feePerSecond,
-            isFree: entry.isFree,
-            isActive: entry.isActive,
-            addedAt: Number(entry.addedAt),
-            addedBy: entry.addedBy
-          });
-        }
-      }
-      
-      setWhitelistEntries(entries);
+      // Note: The current contract doesn't support getting all whitelist entries for a device
+      // This would require iterating through all users, which is not efficient
+      // For now, we'll just provide functionality to add/remove users
+      setWhitelistEntries([]);
       
     } catch (err: any) {
       console.error('Error loading device data:', err);
@@ -198,9 +158,9 @@ export const WhitelistManager = ({ deviceContract, isOwner, onWhitelistUpdate }:
       
       const feePerSecond = formData.isFree ? 0n : ethers.parseEther(formData.feePerSecond);
       
-      const tx = await contract.addDeviceWhitelist(
-        deviceContract,
+      const tx = await contract.addUserToWhitelist(
         formData.userAddress,
+        deviceContract,
         formData.whitelistName,
         feePerSecond,
         formData.isFree
@@ -245,7 +205,7 @@ export const WhitelistManager = ({ deviceContract, isOwner, onWhitelistUpdate }:
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(INFRALINK_INFO_ADDRESS, INFRALINK_INFO_ABI, signer);
       
-      const tx = await contract.removeDeviceWhitelist(deviceContract, userAddress);
+      const tx = await contract.removeUserFromWhitelist(userAddress, deviceContract);
       await tx.wait();
       
       setSuccess('User removed from whitelist successfully!');

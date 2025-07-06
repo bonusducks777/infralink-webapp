@@ -11,10 +11,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ArrowLeft, Settings, HelpCircle, Users, QrCode, AlertCircle, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useAccount } from 'wagmi';
+import { useWallet } from '@/hooks/useWallet';
 
 const DeviceOwner = () => {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useWallet();
   const [showHelp, setShowHelp] = useState(false);
   const [manageDeviceAddress, setManageDeviceAddress] = useState('');
   const [deviceAddressInput, setDeviceAddressInput] = useState('');

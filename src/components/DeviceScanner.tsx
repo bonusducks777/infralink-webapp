@@ -203,15 +203,15 @@ export const DeviceScanner = ({ isOpen, onClose, onDeviceFound }: DeviceScannerP
           <DialogTitle>Find Device</DialogTitle>
         </DialogHeader>
         
-        <Tabs defaultValue="manual" className="w-full">
+        <Tabs defaultValue="scan" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="manual" className="flex items-center space-x-2">
-              <FileText className="w-4 h-4" />
-              <span>Manual Entry</span>
-            </TabsTrigger>
             <TabsTrigger value="scan" className="flex items-center space-x-2">
               <Camera className="w-4 h-4" />
               <span>QR Scan</span>
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="flex items-center space-x-2">
+              <FileText className="w-4 h-4" />
+              <span>Manual Entry</span>
             </TabsTrigger>
           </TabsList>
 

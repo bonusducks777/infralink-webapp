@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
+import { useWallet } from '@/hooks/useWallet';
 import { ethers } from 'ethers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,15 +16,14 @@ import { User, Edit3, Shield, Zap, CheckCircle, AlertCircle } from 'lucide-react
 const INFRALINK_INFO_ABI = [
   // User Profile Functions
   "function getUserProfile(address user) external view returns (string memory name, string memory bio, string memory email, string memory avatar, bool exists, uint256 createdAt, uint256 updatedAt)",
-  "function setUserProfile(string memory name, string memory bio, string memory email, string memory avatar) external",
-  "function getUserWhitelistEntries(address user) external view returns (tuple(address deviceContract, string deviceName, string whitelistName, uint256 feePerSecond, bool isFree, bool isActive, uint256 addedAt, address addedBy)[])",
-  "function getAllUserDevices(address user) external view returns (tuple(address deviceContract, string deviceName, string whitelistName, uint256 feePerSecond, bool isFree, bool isActive, uint256 addedAt, address addedBy)[])",
+  "function updateUserProfile(string memory _name, string memory _bio, string memory _email, string memory _avatar) external",
+  "function getUserWhitelists(address user) external view returns (tuple(address deviceContract, string deviceName, string whitelistName, uint256 feePerSecond, bool isFree, bool isActive, uint256 addedAt, address addedBy)[])",
   
   // Events
   "event UserProfileUpdated(address indexed user, string name, string bio)"
 ];
 
-const INFRALINK_INFO_ADDRESS = "0x0000000000000000000000000000000000000000"; // Replace with actual deployed address
+const INFRALINK_INFO_ADDRESS = "0x7aee0cbbcd0e5257931f7dc87f0345c1bb2aab39"; // Replace with actual deployed address
 
 interface UserProfileData {
   name: string;
@@ -48,7 +47,7 @@ interface DeviceWhitelistEntry {
 }
 
 export const UserProfile = () => {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useWallet();
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [whitelistEntries, setWhitelistEntries] = useState<DeviceWhitelistEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -72,12 +71,6 @@ export const UserProfile = () => {
     setError('');
     
     try {
-      // Check if contract address is configured
-      if (INFRALINK_INFO_ADDRESS === "0x0000000000000000000000000000000000000000") {
-        setError('InfraLink Info contract not configured. Please update INFRALINK_INFO_ADDRESS.');
-        return;
-      }
-
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const contract = new ethers.Contract(INFRALINK_INFO_ADDRESS, INFRALINK_INFO_ABI, provider);
       
@@ -102,17 +95,24 @@ export const UserProfile = () => {
       });
       
       // Get whitelist entries
-      const whitelistData = await contract.getAllUserDevices(address);
-      const entries: DeviceWhitelistEntry[] = whitelistData.map((entry: any) => ({
-        deviceContract: entry.deviceContract,
-        deviceName: entry.deviceName,
-        whitelistName: entry.whitelistName,
-        feePerSecond: entry.feePerSecond,
-        isFree: entry.isFree,
-        isActive: entry.isActive,
-        addedAt: Number(entry.addedAt),
-        addedBy: entry.addedBy
-      }));
+      const whitelistData = await contract.getUserWhitelists(address);
+      const entries: DeviceWhitelistEntry[] = [];
+      
+      // The getUserWhitelists function returns arrays, we need to map them properly
+      if (whitelistData && whitelistData[0]) {
+        for (let i = 0; i < whitelistData[0].length; i++) {
+          entries.push({
+            deviceContract: whitelistData[0][i], // deviceContracts array
+            deviceName: whitelistData[1][i],     // deviceNames array
+            whitelistName: whitelistData[2][i],  // whitelistNames array
+            feePerSecond: whitelistData[3][i],   // feePerSeconds array
+            isFree: whitelistData[4][i],         // isFreeAccess array
+            isActive: true, // All returned entries are active
+            addedAt: Number(whitelistData[5][i]), // addedAts array
+            addedBy: address // We don't have this info from this function
+          });
+        }
+      }
       
       setWhitelistEntries(entries);
       
@@ -141,7 +141,7 @@ export const UserProfile = () => {
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(INFRALINK_INFO_ADDRESS, INFRALINK_INFO_ABI, signer);
       
-      const tx = await contract.setUserProfile(
+      const tx = await contract.updateUserProfile(
         formData.name,
         formData.bio,
         formData.email,

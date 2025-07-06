@@ -1,17 +1,18 @@
 
 import { useEffect, useState } from 'react';
-import { useAccount } from 'wagmi';
+import { useWallet } from '@/hooks/useWallet';
 import { Link } from 'react-router-dom';
 import { DeviceScanner } from '@/components/DeviceScanner';
 import { DeviceDashboard } from '@/components/DeviceDashboard';
 import { WalletConnection } from '@/components/WalletConnection';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { RecentDevices } from '@/components/RecentDevices';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Zap, Wifi, Shield, Clock, Settings, User } from 'lucide-react';
 
 const Index = () => {
-  const { isConnected } = useAccount();
+  const { isConnected } = useWallet();
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
 
@@ -79,13 +80,19 @@ const Index = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button 
                   onClick={() => setShowScanner(true)}
-                  size="lg"
-                  className="bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white px-8 py-3"
+                  className="bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white px-8 py-3 h-12 text-lg"
                 >
                   <Wifi className="w-5 h-5 mr-2" />
                   Scan QR Code
                 </Button>
               </div>
+            </div>
+
+            {/* Recent Devices Section */}
+            <div className="max-w-4xl mx-auto">
+              <RecentDevices 
+                onDeviceSelect={(address) => setSelectedDevice(address)} 
+              />
             </div>
 
             {/* Features Grid */}

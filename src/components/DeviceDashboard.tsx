@@ -1,6 +1,5 @@
-
 import { useState, useEffect } from 'react';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useChainId } from 'wagmi';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,8 +9,11 @@ import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Clock, Zap, Wallet, Bell, Shield, AlertCircle, Users, Star } from 'lucide-react';
+import { ArrowLeft, Clock, Zap, Wallet, Bell, Shield, AlertCircle, CheckCircle, Users, Star } from 'lucide-react';
 import { formatEther, parseEther } from 'viem';
+import { useRecentDevices } from '@/hooks/useRecentDevices';
+import { useWallet } from '@/hooks/useWallet';
+import { INFRALINK_INFO_ADDRESS, INFRALINK_INFO_ABI } from '@/lib/contracts';
 
 interface DeviceDashboardProps {
   deviceAddress: string;
@@ -35,23 +37,20 @@ const DEVICE_CONTRACT_ABI = [
       { name: '_timeRemaining', type: 'uint256' },
       { name: '_tokenName', type: 'string' },
       { name: '_tokenSymbol', type: 'string' },
-      { name: '_tokenDecimals', type: 'uint8' },
-      { name: '_deviceName', type: 'string' },
-      { name: '_deviceDescription', type: 'string' },
-      { name: '_lastUserWasWhitelisted', type: 'bool' },
-      { name: '_whitelistName', type: 'string' },
-      { name: '_useNativeToken', type: 'bool' }
+      { name: '_tokenDecimals', type: 'uint8' }
     ]
   },
   {
-    name: 'getWhitelistInfo',
+    name: 'getDeviceDetails',
     type: 'function',
     stateMutability: 'view',
     inputs: [],
     outputs: [
-      { name: 'addresses', type: 'address[]' },
-      { name: 'names', type: 'string[]' },
-      { name: 'count', type: 'uint256' }
+      { name: '_deviceName', type: 'string' },
+      { name: '_deviceDescription', type: 'string' },
+      { name: '_useNativeToken', type: 'bool' },
+      { name: '_lastUserWasWhitelisted', type: 'bool' },
+      { name: '_whitelistFeePerSecond', type: 'uint256' }
     ]
   },
   {
@@ -134,10 +133,17 @@ const ERC20_ABI = [
 ] as const;
 
 export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps) => {
-  const { address } = useAccount();
+  const { address, isConnected, isAuthenticated } = useWallet();
+  const chainId = useChainId();
   const [paymentDuration, setPaymentDuration] = useState('10'); // minutes
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
+  const [txError, setTxError] = useState<string>('');
+  const [txSuccess, setTxSuccess] = useState<string>('');
+  const [isTransacting, setIsTransacting] = useState(false);
+
+  // Recent devices hook
+  const { addRecentDevice } = useRecentDevices();
 
   // Get device info
   const { data: deviceInfo, isLoading: deviceInfoLoading, error: deviceInfoError, refetch: refetchDeviceInfo } = useReadContract({
@@ -145,15 +151,45 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     abi: DEVICE_CONTRACT_ABI,
     functionName: 'getDeviceInfo',
     args: [address || '0x0000000000000000000000000000000000000000'],
-    query: { refetchInterval: 5000 } // Refetch every 5 seconds
+    query: { 
+      refetchInterval: 30000, // Reduced to 30 seconds
+      enabled: !!deviceAddress
+    }
   });
 
-  // Get whitelist info
-  const { data: whitelistInfo, isLoading: whitelistLoading } = useReadContract({
+  // Get device details (static info, refetch less frequently)
+  const { data: deviceDetails, isLoading: deviceDetailsLoading } = useReadContract({
     address: deviceAddress as `0x${string}`,
     abi: DEVICE_CONTRACT_ABI,
-    functionName: 'getWhitelistInfo',
-    query: { refetchInterval: 10000 } // Refetch every 10 seconds
+    functionName: 'getDeviceDetails',
+    query: { 
+      refetchInterval: 60000, // Reduced to 60 seconds for static info
+      enabled: !!deviceAddress
+    }
+  });
+
+  // Get all registered users from Info contract (only source of user data)
+  const { data: allRegisteredUsers, isLoading: allUsersLoading } = useReadContract({
+    address: INFRALINK_INFO_ADDRESS as `0x${string}`,
+    abi: INFRALINK_INFO_ABI,
+    functionName: 'getAllRegisteredUsers',
+    args: [],
+    query: { 
+      refetchInterval: 45000, // Reduced to 45 seconds
+      enabled: !!INFRALINK_INFO_ADDRESS
+    }
+  });
+
+  // Get user whitelist info from Info contract
+  const { data: userWhitelistInfo, isLoading: userWhitelistLoading } = useReadContract({
+    address: INFRALINK_INFO_ADDRESS as `0x${string}`,
+    abi: INFRALINK_INFO_ABI,
+    functionName: 'getUserWhitelistInfo',
+    args: [address || '0x0000000000000000000000000000000000000000', deviceAddress as `0x${string}`],
+    query: { 
+      refetchInterval: 45000, // Reduced to 45 seconds
+      enabled: !!address && !!deviceAddress
+    }
   });
 
   // Parse device info from the updated contract
@@ -165,18 +201,34 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   const isWhitelisted = deviceInfo?.[5] || false;
   const timeRemaining = Number(deviceInfo?.[6] || 0);
   const tokenName = deviceInfo?.[7] || 'Unknown Token';
-  const tokenSymbol = deviceInfo?.[8] || 'TOKEN';
+  const rawTokenSymbol = deviceInfo?.[8] || 'TOKEN';
   const tokenDecimals = Number(deviceInfo?.[9] || 18);
-  const deviceName = deviceInfo?.[10] || 'Unknown Device';
-  const deviceDescription = deviceInfo?.[11] || 'No description available';
-  const lastUserWasWhitelisted = deviceInfo?.[12] || false;
-  const whitelistName = deviceInfo?.[13] || '';
-  const useNativeToken = deviceInfo?.[14] || false;
 
-  // Parse whitelist info
-  const whitelistAddresses = whitelistInfo?.[0] || [];
-  const whitelistNames = whitelistInfo?.[1] || [];
-  const whitelistCount = Number(whitelistInfo?.[2] || 0);
+  // Parse device details
+  const deviceName = deviceDetails?.[0] || 'Unknown Device';
+  const deviceDescription = deviceDetails?.[1] || 'No description available';
+  const useNativeToken = deviceDetails?.[2] || false;
+
+  // Detect network and adjust token symbol for native tokens
+  const tokenSymbol = useNativeToken && rawTokenSymbol === 'ETH' 
+    ? (chainId === 296 ? 'HBAR' : 'ETH') // 296 = Hedera testnet
+    : rawTokenSymbol;
+  const lastUserWasWhitelisted = deviceDetails?.[3] || false;
+  const whitelistFeePerSecond = deviceDetails?.[4] || 0n;
+
+  // Parse user whitelist info from Info contract
+  const whitelistName = userWhitelistInfo?.[0] || '';
+  const userIsWhitelisted = userWhitelistInfo?.[1] || false;
+  const whitelistFeeFromInfo = userWhitelistInfo?.[2] || 0n;
+  const isFreeFromInfo = userWhitelistInfo?.[3] || false;
+  const addedAt = userWhitelistInfo?.[4] || 0n;
+  const addedBy = userWhitelistInfo?.[5] || '';
+
+  // Calculate applicable fee: use whitelist fee if whitelisted and not free, otherwise regular fee
+  const applicableFee = userIsWhitelisted ? (isFreeFromInfo ? 0n : whitelistFeeFromInfo) : feePerSecond;
+
+  // Check if critical data is loading (only check essential loading states)
+  const isLoadingEssential = deviceInfoLoading || deviceDetailsLoading;
 
   // Get user's token balance (ERC20 or native ETH)
   const { data: tokenBalance } = useReadContract({
@@ -212,8 +264,14 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
 
   // Wait for transaction receipts
   const { isLoading: isApproving } = useWaitForTransactionReceipt({ hash: approveHash });
-  const { isLoading: isActivating } = useWaitForTransactionReceipt({ hash: activateHash });
-  const { isLoading: isDeactivating } = useWaitForTransactionReceipt({ hash: deactivateHash });
+  const { isLoading: isActivating, isSuccess: activateSuccess, isError: activateError } = useWaitForTransactionReceipt({ hash: activateHash });
+  const { isLoading: isDeactivating, isSuccess: deactivateSuccess, isError: deactivateError } = useWaitForTransactionReceipt({ hash: deactivateHash });
+
+  // Clear errors when user changes input
+  useEffect(() => {
+    setTxError('');
+    setTxSuccess('');
+  }, [paymentDuration]);
 
   // Update current time every second
   useEffect(() => {
@@ -223,14 +281,68 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     return () => clearInterval(interval);
   }, []);
 
+  // Add device to recent devices when successfully loaded (stable dependencies)
+  useEffect(() => {
+    if (deviceDetails && deviceName && deviceDescription && !deviceDetailsLoading && address) {
+      addRecentDevice({
+        address: deviceAddress,
+        name: deviceName,
+        description: deviceDescription,
+        isWhitelisted: userIsWhitelisted,
+        whitelistName: whitelistName
+      });
+    }
+  }, [deviceAddress, deviceName, deviceDescription, userIsWhitelisted, whitelistName, address, deviceDetailsLoading]); // Removed addRecentDevice from deps
+
+  // Handle activation transaction results
+  useEffect(() => {
+    if (activateSuccess) {
+      setTxSuccess(`Device activated successfully for ${paymentDuration} minutes!`);
+      setIsTransacting(false);
+      // Refresh device info after successful activation
+      setTimeout(() => {
+        refetchDeviceInfo();
+        setTxSuccess('');
+      }, 3000);
+    }
+  }, [activateSuccess, paymentDuration, refetchDeviceInfo]);
+
+  useEffect(() => {
+    if (activateError) {
+      setTxError('Transaction failed. Please check your balance and try again.');
+      setIsTransacting(false);
+    }
+  }, [activateError]);
+
+  // Handle deactivation transaction results
+  useEffect(() => {
+    if (deactivateSuccess) {
+      setTxSuccess('Device deactivated successfully!');
+      setIsTransacting(false);
+      // Refresh device info after successful deactivation
+      setTimeout(() => {
+        refetchDeviceInfo();
+        setTxSuccess('');
+      }, 3000);
+    }
+  }, [deactivateSuccess, refetchDeviceInfo]);
+
+  useEffect(() => {
+    if (deactivateError) {
+      setTxError('Deactivation failed. Please try again.');
+      setIsTransacting(false);
+    }
+  }, [deactivateError]);
+
   const isActiveSession = isActive && sessionEndsAt > currentTime;
   const isMySession = currentUser.toLowerCase() === address?.toLowerCase();
   const timeLeft = Math.max(0, sessionEndsAt - currentTime);
 
   const calculatePayment = () => {
     const durationSeconds = parseInt(paymentDuration) * 60;
-    const totalCost = feePerSecond * BigInt(durationSeconds);
-    return totalCost;
+    // Use the applicable fee returned from the contract (already accounts for whitelist status)
+    const totalCost = applicableFee * BigInt(durationSeconds);
+  return totalCost;
   };
 
   const formatTokenAmount = (amount: bigint) => {
@@ -269,18 +381,33 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   const handleActivate = async () => {
     if (!address) return;
     
+    setTxError('');
+    setTxSuccess('');
+    setIsTransacting(true);
+    
     const durationSeconds = parseInt(paymentDuration) * 60;
     const payment = calculatePayment();
     
     try {
       if (useNativeToken) {
-        // For native token, send ETH value with the transaction
+        // For native token, send ETH/HBAR value with the transaction
+        // CRITICAL FIX: wagmi assumes 18 decimals for native tokens, but HBAR uses 8 decimals
+        // We need to convert our 8-decimal value to 18-decimal format for wagmi
+        let paymentValue = payment;
+        
+        if (chainId === 296) { // Hedera testnet
+          // Convert from 8-decimal HBAR format to 18-decimal format for wagmi
+          // Multiply by 10^10 to go from 8 decimals to 18 decimals
+          const conversionFactor = 10n ** 10n;
+          paymentValue = payment * conversionFactor;
+        }
+        
         await activateDevice({
           address: deviceAddress as `0x${string}`,
           abi: DEVICE_CONTRACT_ABI,
           functionName: 'activate',
           args: [BigInt(durationSeconds)],
-          value: payment // Send ETH value
+          value: paymentValue // Send native token value
         });
       } else {
         // For ERC20 tokens, no value needed (approval already done)
@@ -291,13 +418,40 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
           args: [BigInt(durationSeconds)]
         });
       }
-    } catch (error) {
+      
+      // Don't show success message immediately - wait for transaction confirmation
+      // The useWaitForTransactionReceipt hook will handle the success/failure
+      
+    } catch (error: any) {
       console.error('Activation failed:', error);
+      let errorMessage = 'Transaction failed. Please try again.';
+      
+      if (error.message?.includes('insufficient funds')) {
+        errorMessage = `Insufficient ${tokenSymbol} balance. You need ${formatTokenAmount(payment)} ${tokenSymbol}.`;
+      } else if (error.message?.includes('execution reverted')) {
+        if (error.message?.includes('Insufficient ETH sent') || error.message?.includes('Insufficient balance')) {
+          errorMessage = `Insufficient payment. The contract requires exactly ${formatTokenAmount(payment)} ${tokenSymbol}.`;
+        } else if (error.message?.includes('Device is busy')) {
+          errorMessage = 'Device is currently busy. Please wait for the current session to end.';
+        } else {
+          errorMessage = 'Transaction was rejected by the contract. Please check your inputs.';
+        }
+      } else if (error.message?.includes('User rejected')) {
+        errorMessage = 'Transaction was cancelled by user.';
+      }
+      
+      setTxError(errorMessage);
+    } finally {
+      setIsTransacting(false);
     }
   };
 
   const handleDeactivate = async () => {
     if (!address) return;
+    
+    setTxError('');
+    setTxSuccess('');
+    setIsTransacting(true);
     
     try {
       await deactivateDevice({
@@ -305,8 +459,24 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         abi: DEVICE_CONTRACT_ABI,
         functionName: 'deactivate'
       });
-    } catch (error) {
+      
+      // Don't show success message immediately - wait for transaction confirmation
+      
+    } catch (error: any) {
       console.error('Deactivation failed:', error);
+      let errorMessage = 'Deactivation failed. Please try again.';
+      
+      if (error.message?.includes('Not authorized')) {
+        errorMessage = 'Only the user who activated the device can deactivate it.';
+      } else if (error.message?.includes('Device not active')) {
+        errorMessage = 'Device is not currently active.';
+      } else if (error.message?.includes('User rejected')) {
+        errorMessage = 'Transaction was cancelled by user.';
+      }
+      
+      setTxError(errorMessage);
+    } finally {
+      setIsTransacting(false);
     }
   };
 
@@ -329,7 +499,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
     }
   };
 
-  if (deviceInfoLoading) {
+  if (isLoadingEssential) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -390,11 +560,31 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         </Alert>
       )}
 
+      {/* Transaction Success Alert */}
+      {txSuccess && (
+        <Alert className="border-green-200 bg-green-50 dark:bg-green-900/20">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-800 dark:text-green-200">
+            {txSuccess}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Transaction Error Alert */}
+      {txError && (
+        <Alert className="border-red-200 bg-red-50 dark:bg-red-900/20">
+          <AlertCircle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-800 dark:text-red-200">
+            {txError}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Tabs defaultValue="device" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="device">Device Control</TabsTrigger>
           <TabsTrigger value="info">Device Info</TabsTrigger>
-          <TabsTrigger value="whitelist">Whitelist ({whitelistCount})</TabsTrigger>
+          <TabsTrigger value="whitelist">Users ({allRegisteredUsers?.length || 0})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="device" className="space-y-6">
@@ -452,14 +642,14 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                   <div className="flex items-center justify-between">
                     <span>Your Fee Rate</span>
                     <span className="font-mono">
-                      {feePerSecond === 0n ? 'FREE' : `${formatTokenAmount(feePerSecond)} ${tokenSymbol}/sec`}
+                      {applicableFee === 0n ? 'FREE' : `${formatTokenAmount(applicableFee)} ${tokenSymbol}/sec`}
                     </span>
                   </div>
                   
                   {isWhitelisted && (
                     <div className="flex items-center space-x-2 text-sm text-green-600 dark:text-green-400">
                       <Star className="w-4 h-4" />
-                      <span>Whitelisted - {feePerSecond === 0n ? 'Free Access' : 'Reduced Rate'}</span>
+                      <span>Whitelisted - {applicableFee === 0n ? 'Free Access' : 'Reduced Rate'}</span>
                     </div>
                   )}
                 </div>
@@ -502,27 +692,27 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                   <div className="flex justify-between">
                     <span>Rate:</span>
                     <span>
-                      {feePerSecond === 0n ? 'FREE' : `${formatTokenAmount(feePerSecond)} ${tokenSymbol}/sec`}
+                      {applicableFee === 0n ? 'FREE' : `${formatTokenAmount(applicableFee)} ${tokenSymbol}/sec`}
                     </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between font-semibold">
                     <span>Total Cost:</span>
                     <span>
-                      {feePerSecond === 0n ? 'FREE' : `${formatTokenAmount(calculatePayment())} ${tokenSymbol}`}
+                      {applicableFee === 0n ? 'FREE' : `${formatTokenAmount(calculatePayment())} ${tokenSymbol}`}
                     </span>
                   </div>
                 </div>
 
                 {/* Balance check */}
-                {tokenBalance !== undefined && feePerSecond > 0n && (
+                {tokenBalance !== undefined && applicableFee > 0n && (
                   <div className="text-sm text-gray-600 dark:text-gray-400">
                     Your balance: {formatTokenAmount(tokenBalance)} {tokenSymbol}
                   </div>
                 )}
 
                 {/* Insufficient balance warning */}
-                {!hasEnoughBalance() && feePerSecond > 0n && (
+                {!hasEnoughBalance() && applicableFee > 0n && (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
@@ -533,7 +723,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
 
                 {/* Action buttons */}
                 <div className="space-y-2">
-                  {feePerSecond > 0n && needsApproval() && hasEnoughBalance() && (
+                  {applicableFee > 0n && needsApproval() && hasEnoughBalance() && (
                     <Button 
                       onClick={handleApprove}
                       className="w-full"
@@ -543,23 +733,23 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
                     </Button>
                   )}
                   
-                  {(feePerSecond === 0n || (!needsApproval() && hasEnoughBalance())) && (
+                  {(applicableFee === 0n || (!needsApproval() && hasEnoughBalance())) && (
                     <Button 
                       onClick={handleActivate}
                       className="w-full bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600"
-                      disabled={isActivating || !paymentDuration || parseInt(paymentDuration) <= 0}
+                      disabled={isActivating || isTransacting || !paymentDuration || parseInt(paymentDuration) <= 0}
                     >
-                      {isActivating ? "Activating..." : (isActiveSession ? "Extend Session" : "Activate Device")}
+                      {isActivating || isTransacting ? "Processing..." : (isActiveSession ? "Extend Session" : "Activate Device")}
                     </Button>
                   )}
 
                   {isMySession && (
                     <Button 
                       onClick={handleDeactivate}
-                      className="w-full border border-gray-300 hover:bg-gray-50"
-                      disabled={isDeactivating}
+                      className="w-full bg-red-500 hover:bg-red-600"
+                      disabled={isDeactivating || isTransacting}
                     >
-                      {isDeactivating ? "Deactivating..." : "End Session Early"}
+                      {isDeactivating || isTransacting ? "Processing..." : "Deactivate Device"}
                     </Button>
                   )}
                 </div>
@@ -645,37 +835,50 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Users className="w-5 h-5" />
-                <span>Whitelisted Users ({whitelistCount})</span>
+                <span>Registered Users ({allRegisteredUsers?.length || 0})</span>
               </CardTitle>
               <CardDescription>
-                Users with special access to this device
+                All users registered in the InfraLink system
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {whitelistLoading ? (
+              {allUsersLoading ? (
                 <div className="flex items-center justify-center p-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                 </div>
-              ) : whitelistCount === 0 ? (
+              ) : !allRegisteredUsers || allRegisteredUsers.length === 0 ? (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-                  No whitelisted users yet
+                  No registered users yet
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {whitelistAddresses.map((addr: string, index: number) => (
+                  {allRegisteredUsers.map((addr: string, index: number) => (
                     <div key={addr} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-green-500 rounded-full flex items-center justify-center">
                           <Shield className="w-4 h-4 text-white" />
                         </div>
-                        <div>
-                          <p className="font-medium">{whitelistNames[index] || 'Unnamed User'}</p>
+                        <div className="flex-1">
+                          <p className="font-medium">Registered User</p>
                           <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">{addr}</p>
+                          <p className="text-xs text-gray-500">
+                            {addr.toLowerCase() === address?.toLowerCase() && userIsWhitelisted && isFreeFromInfo 
+                              ? 'Free Access' 
+                              : addr.toLowerCase() === address?.toLowerCase() && userIsWhitelisted
+                                ? `${formatTokenAmount(whitelistFeeFromInfo || 0n)} ${tokenSymbol}/sec`
+                                : 'Registered'
+                            }
+                          </p>
                         </div>
                       </div>
-                      {addr.toLowerCase() === address?.toLowerCase() && (
-                        <Badge className="bg-green-100 text-green-800">You</Badge>
-                      )}
+                      <div className="flex items-center space-x-2">
+                        {addr.toLowerCase() === address?.toLowerCase() && userIsWhitelisted && isFreeFromInfo && (
+                          <Badge className="bg-green-100 text-green-800 text-xs">FREE</Badge>
+                        )}
+                        {addr.toLowerCase() === address?.toLowerCase() && (
+                          <Badge className="bg-blue-100 text-blue-800">You</Badge>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
