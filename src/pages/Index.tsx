@@ -25,31 +25,22 @@ const Index = () => {
             <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-green-500 rounded-lg flex items-center justify-center">
               <Zap className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
               InfraLink
             </h1>
           </div>
-          <div className="flex items-center space-x-2 md:space-x-4">
+          <div className="flex items-center space-x-4">
             <ThemeToggle />
-            <Link to="/profile" className="hidden sm:block">
+            <Link to="/profile">
               <Button variant="outline" size="sm">
                 <User className="w-4 h-4 mr-2" />
                 Profile
               </Button>
             </Link>
-            <Link to="/profile" className="sm:hidden">
-              <Button variant="outline" size="sm">
-                <User className="w-4 h-4" />
-              </Button>
-            </Link>
             <Link to="/device-owner">
               <Button variant="outline" size="sm">
-                <Settings className="w-4 h-4" />
-              </Button>
-            </Link>
-            <Link to="/contract-deployer">
-              <Button variant="outline" size="sm">
-                <Zap className="w-4 h-4" />
+                <Settings className="w-4 h-4 mr-2" />
+                Device Owner
               </Button>
             </Link>
             <WalletConnection />
@@ -57,16 +48,16 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-4 md:py-8">
+      <main className="container mx-auto px-4 py-8">
         {!isConnected ? (
-          <div className="text-center py-8 md:py-16">
+          <div className="text-center py-16">
             <Card className="max-w-md mx-auto">
               <CardHeader>
-                <CardTitle className="flex items-center justify-center space-x-2 text-lg md:text-xl">
-                  <Shield className="w-5 h-5 md:w-6 md:h-6 text-blue-500" />
+                <CardTitle className="flex items-center justify-center space-x-2">
+                  <Shield className="w-6 h-6 text-blue-500" />
                   <span>Connect Your Wallet</span>
                 </CardTitle>
-                <CardDescription className="text-sm md:text-base">
+                <CardDescription>
                   Connect your wallet to access hardware devices via smart contracts
                 </CardDescription>
               </CardHeader>
@@ -76,22 +67,22 @@ const Index = () => {
             </Card>
           </div>
         ) : !selectedDevice ? (
-          <div className="space-y-6 md:space-y-8">
+          <div className="space-y-8">
             {/* Hero Section */}
-            <div className="text-center py-4 md:py-8">
-              <h2 className="text-2xl md:text-4xl font-bold mb-2 md:mb-4 bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
+            <div className="text-center py-8">
+              <h2 className="text-4xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
                 Access Hardware Devices
               </h2>
-              <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 mb-4 md:mb-8 px-4">
+              <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
                 Scan a QR code or enter a device address to get started
               </p>
               
-              <div className="flex flex-col sm:flex-row gap-4 justify-center px-4">
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button 
                   onClick={() => setShowScanner(true)}
-                  className="bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white px-6 md:px-8 py-3 h-12 text-base md:text-lg w-full sm:w-auto"
+                  className="bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white px-8 py-3 h-12 text-lg"
                 >
-                  <Wifi className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                  <Wifi className="w-5 h-5 mr-2" />
                   Scan QR Code
                 </Button>
               </div>
@@ -105,38 +96,38 @@ const Index = () => {
             </div>
 
             {/* Features Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mt-8 md:mt-12 px-4">
+            <div className="grid md:grid-cols-3 gap-6 mt-12">
               <Card className="text-center hover:shadow-lg transition-shadow duration-300">
-                <CardHeader className="pb-3 md:pb-4">
-                  <Zap className="w-10 h-10 md:w-12 md:h-12 text-blue-500 mx-auto mb-2 md:mb-4" />
-                  <CardTitle className="text-lg md:text-xl">Instant Access</CardTitle>
+                <CardHeader>
+                  <Zap className="w-12 h-12 text-blue-500 mx-auto mb-4" />
+                  <CardTitle>Instant Access</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <CardDescription className="text-sm md:text-base">
+                  <CardDescription>
                     Pay with ERC20 tokens for immediate device activation
                   </CardDescription>
                 </CardContent>
               </Card>
 
               <Card className="text-center hover:shadow-lg transition-shadow duration-300">
-                <CardHeader className="pb-3 md:pb-4">
-                  <Clock className="w-10 h-10 md:w-12 md:h-12 text-green-500 mx-auto mb-2 md:mb-4" />
-                  <CardTitle className="text-lg md:text-xl">Time-Based Billing</CardTitle>
+                <CardHeader>
+                  <Clock className="w-12 h-12 text-green-500 mx-auto mb-4" />
+                  <CardTitle>Time-Based Billing</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <CardDescription className="text-sm md:text-base">
+                  <CardDescription>
                     Pay per second with transparent pricing and session tracking
                   </CardDescription>
                 </CardContent>
               </Card>
 
               <Card className="text-center hover:shadow-lg transition-shadow duration-300">
-                <CardHeader className="pb-3 md:pb-4">
-                  <Shield className="w-10 h-10 md:w-12 md:h-12 text-purple-500 mx-auto mb-2 md:mb-4" />
-                  <CardTitle className="text-lg md:text-xl">Secure & Decentralized</CardTitle>
+                <CardHeader>
+                  <Shield className="w-12 h-12 text-purple-500 mx-auto mb-4" />
+                  <CardTitle>Secure & Decentralized</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <CardDescription className="text-sm md:text-base">
+                  <CardDescription>
                     Smart contract-based access with whitelist support
                   </CardDescription>
                 </CardContent>
