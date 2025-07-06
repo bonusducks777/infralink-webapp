@@ -1,5 +1,6 @@
+
 import { useState, useEffect } from 'react';
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useChainId } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useChainId, useAccount } from 'wagmi';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -135,6 +136,7 @@ const ERC20_ABI = [
 export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps) => {
   const { address, isConnected, isAuthenticated } = useWallet();
   const chainId = useChainId();
+  const { chain } = useAccount();
   const [paymentDuration, setPaymentDuration] = useState('10'); // minutes
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
@@ -363,7 +365,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleApprove = async () => {
-    if (!tokenAddress || !address) return;
+    if (!tokenAddress || !address || !chain) return;
     
     const amount = calculatePayment();
     try {
@@ -371,7 +373,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
         address: tokenAddress as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [deviceAddress as `0x${string}`, amount]
+        args: [deviceAddress as `0x${string}`, amount],
+        chain,
+        account: address
       });
     } catch (error) {
       console.error('Approval failed:', error);
@@ -379,7 +383,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleActivate = async () => {
-    if (!address) return;
+    if (!address || !chain) return;
     
     setTxError('');
     setTxSuccess('');
@@ -407,7 +411,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
           abi: DEVICE_CONTRACT_ABI,
           functionName: 'activate',
           args: [BigInt(durationSeconds)],
-          value: paymentValue // Send native token value
+          value: paymentValue, // Send native token value
+          chain,
+          account: address
         });
       } else {
         // For ERC20 tokens, no value needed (approval already done)
@@ -415,7 +421,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
           address: deviceAddress as `0x${string}`,
           abi: DEVICE_CONTRACT_ABI,
           functionName: 'activate',
-          args: [BigInt(durationSeconds)]
+          args: [BigInt(durationSeconds)],
+          chain,
+          account: address
         });
       }
       
@@ -447,7 +455,7 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
   };
 
   const handleDeactivate = async () => {
-    if (!address) return;
+    if (!address || !chain) return;
     
     setTxError('');
     setTxSuccess('');
@@ -457,7 +465,9 @@ export const DeviceDashboard = ({ deviceAddress, onBack }: DeviceDashboardProps)
       await deactivateDevice({
         address: deviceAddress as `0x${string}`,
         abi: DEVICE_CONTRACT_ABI,
-        functionName: 'deactivate'
+        functionName: 'deactivate',
+        chain,
+        account: address
       });
       
       // Don't show success message immediately - wait for transaction confirmation
